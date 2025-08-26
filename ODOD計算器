@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Agro OD 批次計算器 · iPhone 友善主題（穩定版 + 一鍵套用）</title>
+  <meta name="theme-color" content="#0b1220">
+  <style>
+    :root{ --bg:#0b1220; --card:#111827; --ink:#e5e7eb; --muted:#9ca3af; --line:#1f2937; --accent:#22c55e; --warn:#ef4444; }
+    html,body{height:100%}
+    body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"; -webkit-font-smoothing:antialiased; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); -webkit-tap-highlight-color:transparent; }
+    .app{ max-width:980px; margin:0 auto; }
+    .topbar{ position:sticky; top:0; z-index:10; background:rgba(0,0,0,.2); border-bottom:1px solid var(--line); backdrop-filter:blur(8px); }
+    .topbar-inner{ display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; }
+    .title{ font-size:18px; font-weight:700; letter-spacing:.3px; }
+    .controls{ margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .field{ display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:8px 10px; }
+    .field label{ font-size:14px; color:var(--muted); }
+    .field input{ border:none; outline:none; background:transparent; color:var(--ink); font-size:16px; width:88px; height:36px; text-align:center; border-radius:10px; -webkit-appearance:none; appearance:none; }
+    .btn{ height:40px; padding:0 14px; border-radius:14px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:15px; cursor:pointer; }
+    .btn:active{ transform:translateY(1px); }
+    .btn.accent{ background:var(--accent); color:#06210f; border-color:transparent; font-weight:700; }
+    .hint{ color:var(--muted); font-size:12px; padding:8px 14px; }
+    .table-wrap{ overflow:auto; padding:12px 14px 24px; }
+    table{ width:100%; border-collapse:separate; border-spacing:0; min-width:760px; }
+    th,td{ border-bottom:1px solid var(--line); padding:8px 6px; text-align:center; font-size:15px; }
+    tbody tr:nth-child(odd){ background:rgba(255,255,255,.03); }
+    .in{ width:90px; height:34px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); text-align:center; font-size:15px; }
+    .mono{ font-variant-numeric:tabular-nums; }
+    .warn{ color:var(--warn); font-weight:700; }
+    .footer{ color:var(--muted); font-size:12px; padding:12px 14px 20px; text-align:center; }
+    .bulk-controls{ display:flex; gap:8px; padding:8px 14px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="title">Agro OD 批次計算器</div>
+      <div class="controls">
+        <div class="field">
+          <label for="count">樣本數量</label>
+          <input id="count" type="tel" inputmode="numeric" pattern="[0-9]*" value="5" aria-label="樣本數量">
+        </div>
+        <button class="btn accent" id="btnGen" aria-label="產生表格">產生表格</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">欄位：稀釋倍數（預設 50）、量到 OD600、目標 OD600、總體積（預設 1000 µL）。公式：C1V1 = C2V2。</div>
+
+  <div class="bulk-controls">
+    <div class="field"><label>稀釋倍數</label><input id="bulkDil" type="tel" inputmode="decimal" value="50"></div>
+    <div class="field"><label>目標 OD</label><input id="bulkDes" type="tel" inputmode="decimal" value="0.2"></div>
+    <div class="field"><label>總體積</label><input id="bulkVol" type="tel" inputmode="decimal" value="1000"></div>
+    <button class="btn" id="btnApply">一鍵套用</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>編號</th>
+          <th>稀釋倍數</th>
+          <th>量到 OD600</th>
+          <th>目標 OD600</th>
+          <th>總體積 (µL)</th>
+          <th>原液 OD</th>
+          <th>取原液 (µL)</th>
+          <th>加稀釋液 (µL)</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">穩定版 + 一鍵套用：可一次把稀釋倍數、目標 OD、總體積套用到所有列。</div>
+</div>
+
+<script>
+(function(){
+  function $(id){ return document.getElementById(id); }
+  function num(v){ v = String(v||'').replace(',', '.').trim(); var n = Number(v); return (isFinite(n) && v!=='') ? n : 0; }
+  function fixed3(x){ return isFinite(x) ? Number(x).toFixed(3) : ''; }
+
+  function cellText(txt){ var td=document.createElement('td'); td.className='mono'; td.textContent=txt; return td; }
+  function cellInput(val, ph){ var td=document.createElement('td'); var inp=document.createElement('input'); inp.className='in'; inp.type='tel'; inp.inputMode='decimal'; if (ph) inp.placeholder=ph; if (typeof val!=='undefined') inp.value=String(val); td.appendChild(inp); return {td:td, input:inp}; }
+
+  function recompute(row){
+    var dil=num(row.inDil.value), mea=num(row.inMea.value), des=num(row.inDes.value), vol=num(row.inVol.value);
+    if(!dil || !mea || !des || !vol){ row.tdStock.textContent=''; row.tdV1.textContent=''; row.tdV2.textContent=''; row.tdV1.className='mono'; return; }
+    var stock = mea * dil; row.tdStock.textContent = fixed3(stock);
+    if(stock < des){ row.tdV1.textContent='不可行'; row.tdV1.className='mono warn'; row.tdV2.textContent=''; return; }
+    var V1=(des*vol)/stock, V2=vol - V1; row.tdV1.textContent=Math.round(V1); row.tdV1.className='mono'; row.tdV2.textContent=Math.round(V2);
+  }
+
+  function generate(){
+    var tbody = $('tbody'); tbody.innerHTML='';
+    var raw = $('count').value; var n = num(raw); if(!n || n<1) n=1; if(n>50) n=50;
+    for(var i=1;i<=n;i++){
+      var tr=document.createElement('tr');
+      tr.appendChild( cellText(i) );
+      var cDil=cellInput(50); tr.appendChild(cDil.td);
+      var cMea=cellInput('', '0.18'); tr.appendChild(cMea.td);
+      var cDes=cellInput('', '0.2');  tr.appendChild(cDes.td);
+      var cVol=cellInput(1000); tr.appendChild(cVol.td);
+      var tdStock=cellText(''); tr.appendChild(tdStock);
+      var tdV1=cellText(''); tr.appendChild(tdV1);
+      var tdV2=cellText(''); tr.appendChild(tdV2);
+      var row={ inDil:cDil.input, inMea:cMea.input, inDes:cDes.input, inVol:cVol.input, tdStock:tdStock, tdV1:tdV1, tdV2:tdV2 };
+      cDil.input.addEventListener('input', (function(r){ return function(){ recompute(r); }; })(row));
+      cMea.input.addEventListener('input', (function(r){ return function(){ recompute(r); }; })(row));
+      cDes.input.addEventListener('input', (function(r){ return function(){ recompute(r); }; })(row));
+      cVol.input.addEventListener('input', (function(r){ return function(){ recompute(r); }; })(row));
+      tbody.appendChild(tr);
+    }
+  }
+
+  function applyBulk(){
+    var dil = $('bulkDil').value;
+    var des = $('bulkDes').value;
+    var vol = $('bulkVol').value;
+    var rows = $('tbody').querySelectorAll('tr');
+    for(var i=0;i<rows.length;i++){
+      var inputs = rows[i].querySelectorAll('input');
+      if(inputs[0]) inputs[0].value = dil;
+      if(inputs[2]) inputs[2].value = des;
+      if(inputs[3]) inputs[3].value = vol;
+      // 重新計算
+      inputs[0].dispatchEvent(new Event('input'));
+      inputs[2].dispatchEvent(new Event('input'));
+      inputs[3].dispatchEvent(new Event('input'));
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    $('btnGen').addEventListener('click', generate);
+    $('btnApply').addEventListener('click', applyBulk);
+    generate();
+  });
+})();
+</script>
+</body>
+</html>
